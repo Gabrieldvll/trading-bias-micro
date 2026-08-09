@@ -160,7 +160,7 @@ const PAIRS = {
 const MARKER_RULES = [
   { canonical: 'bias ID', regex: /\b(?:bias|biais|billet)\s*(?:idée|idee|idea|ida|i\s*d|id)\b/gi },
   { canonical: 'bias direction', regex: /\b(?:bias|biais|billet)\s+direction\b|\bdirection\s+(?:du\s+)?(?:bias|biais)\b/gi },
-  { canonical: 'result R', regex: /\b(?:result|résultat|resultat)\s*(?:r|air)\b/gi },
+  { canonical: 'result R', regex: /\b(?:result|résultat|resultat|résulte|resulte)\s*(?:r|air)(?=\s|[-+]?\d|$)/gi },
   { canonical: 'outcome', regex: /\b(?:outcome|out\s*come|autcome|outcom)\b/gi },
   { canonical: 'pair', regex: /\b(?:pair|paire|père|pere)\b/gi },
   { canonical: 'date', regex: /\bdate\b/gi }
