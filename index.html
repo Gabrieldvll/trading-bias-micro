@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trading Bias — Micro V1.6 TEST</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f7f8fa;
+      color: #1f2937;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: 26px; }
+    .subtitle { color: #64748b; margin-bottom: 18px; line-height: 1.45; }
+    .panel {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    button, select {
+      border: 1px solid #cbd5e1;
+      border-radius: 9px;
+      padding: 11px 15px;
+      font-size: 14px;
+      font-weight: 700;
+      background: #fff;
+    }
+    button { cursor: pointer; }
+    #micBtn { background: #111827; color: #fff; border-color: #111827; }
+    #stopBtn { background: #e5e7eb; }
+    #clearBtn { background: #fff; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      display: inline-block;
+      background: #94a3b8;
+      margin-right: 7px;
+    }
+    .dot.live { background: #dc2626; }
+    .status {
+      margin-top: 14px;
+      border-radius: 9px;
+      padding: 11px 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      white-space: pre-wrap;
+      line-height: 1.4;
+    }
+    textarea {
+      width: 100%;
+      min-height: 260px;
+      resize: vertical;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 14px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      outline: none;
+    }
+    textarea:focus { border-color: #64748b; }
+    .interim {
+      min-height: 44px;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 9px;
+      background: #f8fafc;
+      color: #64748b;
+      font-style: italic;
+    }
+    .small { color: #64748b; font-size: 12px; line-height: 1.45; }
+    .label { display: block; font-weight: 800; margin-bottom: 8px; }
+    .compat { margin-top: 8px; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Trading Bias — Micro V1.6 TEST</h1>
+  <div class="subtitle">
+    Étape micro uniquement : on vérifie la transcription brute avant de la brancher au parser et au SAVE.
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <button id="micBtn">🎙️ DÉMARRER</button>
+      <button id="stopBtn" disabled>STOP</button>
+      <button id="clearBtn">EFFACER</button>
+      <select id="langSelect" aria-label="Langue de reconnaissance">
+        <option value="fr-FR" selected>Français (fr-FR)</option>
+        <option value="en-US">English (en-US)</option>
+      </select>
+    </div>
+    <div id="status" class="status"><span id="dot" class="dot"></span><span id="statusText">Prêt.</span></div>
+    <div id="compat" class="compat"></div>
+  </div>
+
+  <div class="panel">
+    <label class="label" for="transcript">Transcription finale</label>
+    <textarea id="transcript" placeholder="La dictée apparaîtra ici..."></textarea>
+    <div id="interim" class="interim">Transcription provisoire…</div>
+    <div class="small" style="margin-top:10px;">
+      Pour ce test, rien n'est envoyé vers Google Sheets et rien n'est sauvegardé automatiquement.
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SpeechRecognitionPhraseCtor = window.SpeechRecognitionPhrase;
+
+  const micBtn = document.getElementById('micBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const langSelect = document.getElementById('langSelect');
+  const transcriptEl = document.getElementById('transcript');
+  const interimEl = document.getElementById('interim');
+  const statusTextEl = document.getElementById('statusText');
+  const dotEl = document.getElementById('dot');
+  const compatEl = document.getElementById('compat');
+
+  let recognition = null;
+  let shouldContinue = false;
+  let isRunning = false;
+  let finalTranscript = '';
+
+  function setStatus(message, live) {
+    statusTextEl.textContent = message;
+    dotEl.className = live ? 'dot live' : 'dot';
+  }
+
+  function setButtons() {
+    micBtn.disabled = isRunning;
+    stopBtn.disabled = !isRunning;
+    langSelect.disabled = isRunning;
+  }
+
+  function appendFinal(text) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    finalTranscript = (finalTranscript ? finalTranscript + ' ' : '') + clean;
+    transcriptEl.value = finalTranscript;
+    transcriptEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function applyTradingBiasPhrases(rec) {
+    if (!SpeechRecognitionPhraseCtor || !('phrases' in rec)) return false;
+
+    const phrases = [
+      'bias ID', 'date', 'pair', 'bias direction', 'outcome', 'result R',
+      'LA', 'LU', 'CZA', 'CZU', 'TBS', 'PS', 'S', 'TBF', 'PF', 'F',
+      'OB', 'BI', 'POI', 'OE bull', 'OE bear', 'DISTRIB', 'ACCU',
+      'SP bull', 'SP bear', 'T bull', 'T bear',
+      'IN', 'OUT', 'SUP', 'OPP',
+      '6M', '3M', '1M', '2W', '1W', '4D', '2D', '1D',
+      'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6',
+      'bullish', 'bearish', 'supportive', 'opposing',
+      'liquidity above', 'liquidity under',
+      'confirmation zone above', 'confirmation zone under',
+      'overextension bull', 'overextension bear',
+      'distribution', 'accumulation',
+      'strong pivot bull', 'strong pivot bear',
+      'trend bull', 'trend bear'
+    ];
+
+    try {
+      phrases.forEach(function (phrase) {
+        rec.phrases.push(new SpeechRecognitionPhraseCtor(phrase, 4.0));
+      });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function buildRecognition() {
+    const rec = new SpeechRecognitionCtor();
+    rec.lang = langSelect.value;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+
+    if ('unspokenPunctuation' in rec) {
+      try { rec.unspokenPunctuation = false; } catch (e) {}
+    }
+
+    const phrasesEnabled = applyTradingBiasPhrases(rec);
+    compatEl.textContent = phrasesEnabled
+      ? 'Reconnaissance disponible. Boost du vocabulaire Trading Bias activé.'
+      : 'Reconnaissance disponible. Boost contextuel non disponible dans ce navigateur ; le test reste utilisable.';
+
+    rec.onstart = function () {
+      isRunning = true;
+      setButtons();
+      setStatus('Micro actif — parle normalement.', true);
+    };
+
+    rec.onresult = function (event) {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const text = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          appendFinal(text);
+        } else {
+          interim += text;
+        }
+      }
+      interimEl.textContent = interim || 'Transcription provisoire…';
+    };
+
+    rec.onerror = function (event) {
+      const code = event && event.error ? event.error : 'unknown';
+      if (code === 'not-allowed' || code === 'service-not-allowed') {
+        shouldContinue = false;
+        setStatus('Accès micro refusé. Autorise le microphone dans Chrome puis relance.', false);
+      } else if (code === 'audio-capture') {
+        shouldContinue = false;
+        setStatus('Aucun microphone utilisable n’a été détecté.', false);
+      } else if (code === 'language-not-supported') {
+        shouldContinue = false;
+        setStatus('Langue non prise en charge par le moteur de reconnaissance.', false);
+      } else if (code === 'phrases-not-supported') {
+        shouldContinue = false;
+        setStatus('Le navigateur refuse le boost de vocabulaire. Recharge la page : le prochain test pourra être fait sans boost.', false);
+      } else if (code !== 'no-speech' && code !== 'aborted') {
+        setStatus('Erreur de reconnaissance : ' + code, false);
+      }
+    };
+
+    rec.onend = function () {
+      isRunning = false;
+      setButtons();
+
+      if (shouldContinue) {
+        setStatus('Reprise du micro…', true);
+        setTimeout(function () {
+          if (!shouldContinue) return;
+          try { rec.start(); } catch (e) {
+            shouldContinue = false;
+            setStatus('Impossible de relancer le micro : ' + e.message, false);
+          }
+        }, 250);
+      } else {
+        setStatus('Micro arrêté.', false);
+      }
+    };
+
+    return rec;
+  }
+
+  if (!SpeechRecognitionCtor) {
+    micBtn.disabled = true;
+    stopBtn.disabled = true;
+    compatEl.textContent = 'SpeechRecognition n’est pas disponible dans ce navigateur. Utilise Google Chrome à jour pour ce test.';
+    setStatus('Reconnaissance vocale indisponible.', false);
+    return;
+  }
+
+  compatEl.textContent = 'Reconnaissance vocale détectée. Le navigateur demandera l’autorisation micro au premier démarrage.';
+
+  micBtn.addEventListener('click', function () {
+    shouldContinue = true;
+    interimEl.textContent = 'Transcription provisoire…';
+
+    try {
+      recognition = buildRecognition();
+      recognition.start();
+    } catch (e) {
+      shouldContinue = false;
+      isRunning = false;
+      setButtons();
+      setStatus('Impossible de démarrer : ' + e.message, false);
+    }
+  });
+
+  stopBtn.addEventListener('click', function () {
+    shouldContinue = false;
+    if (recognition) {
+      try { recognition.stop(); } catch (e) {}
+    }
+  });
+
+  clearBtn.addEventListener('click', function () {
+    finalTranscript = '';
+    transcriptEl.value = '';
+    interimEl.textContent = 'Transcription provisoire…';
+    setStatus(isRunning ? 'Micro actif — parle normalement.' : 'Prêt.', isRunning);
+  });
+
+  transcriptEl.addEventListener('input', function () {
+    finalTranscript = transcriptEl.value.trim();
+  });
+})();
+</script>
+</body>
+</html>
