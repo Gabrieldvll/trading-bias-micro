@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Trading Bias — V4.4 D2 + Zero Outcome Fix</title>
+  <title>Trading Bias — V4.5 Strict Timeframes</title>
   <style>
     * { box-sizing: border-box; }
     body { margin:0; padding:24px; font-family:Arial,Helvetica,sans-serif; background:#f7f8fa; color:#1f2937; }
@@ -35,7 +35,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Trading Bias — V4.4 D2 + Zero Outcome Fix</h1>
+  <h1>Trading Bias — V4.5 Strict Timeframes</h1>
   <div class="subtitle">
     Header fermé + grammaire fermée pour les 12 familles de facteurs. La normalisation reste temps réel. Un buffer temporaire abandonne automatiquement une tentative non comprise après 1,5 s de pause, sans effacer les champs déjà validés. Commandes vocales : CLEAR, CLEAR FACTOR, CLEAR BIAS. Le bouton TEST valide la transcription canonique avec V1.5.1. Après un TEST réussi sur exactement le même texte, SAVE appelle le SAVE V1.5.1 sécurisé.
   </div>
@@ -96,6 +96,7 @@
       <div>T BULL/BEAR → TF → scope → alignment</div>
       <div><strong>Header EN :</strong> B1/B one | D2 January 2022 ou D 2 January 2022 | P NC/P EU | BD | O one/O zero (tolère aussi 01/00)</div>
       <div><strong>Facteurs V4 :</strong> 1=LA | 2=LU | 3=CZA | 4=CZU | 5B/5R=OE Bull/Bear | 6=DISTRIB | 7=ACCU | 8B/8R=SP Bull/Bear | 9B/9R=Trend Bull/Bear</div>
+      <div><strong>Timeframes STRICTS :</strong> 6M / 3M / 1M / 2W / 1W / 4D / 2D / 1D — aucune approximation, aucun fallback</div>
       <div><strong>Champs courts :</strong> scope I/O | alignment S/O | status T/P/S ou T/P/F | CZ O/B/P | Q/D/R = nombre seul</div>
       <div><strong>Undo rapide :</strong> CLEAR N → N champs | CLEAR FACTOR N → N facteurs | CLEAR BIAS → biais entier</div>
     </div>
@@ -200,14 +201,31 @@ const FACTOR_STARTS = {
 };
 
 const TIMEFRAMES = {
-  '6M': ['6m', '6 m', 'six m', 'six aime', '6 aime'],
-  '3M': ['3m', '3 m', 'trois m', 'trois aime', '3 aime'],
-  '1M': ['1m', '1 m', 'un m', 'un aime', '1 aime'],
-  '2W': ['2w', '2 w', 'deux w', 'deux double v', '2 double v', 'deux double ve'],
-  '1W': ['1w', '1 w', 'un w', 'un double v', '1 double v', 'un double ve'],
-  '4D': ['4d', '4 d', 'quatre d', 'quatre de', '4 de'],
-  '2D': ['2d', '2 d', 'deux d', 'deux de', '2 de'],
-  '1D': ['1d', '1 d', 'un d', 'un de', '1 de']
+  '6M': ['6m', '6 m', 'six m', 'six em', 'six month', 'six months'],
+  '3M': ['3m', '3 m', 'three m', 'three em', 'three month', 'three months'],
+  '1M': ['1m', '1 m', 'one m', 'one em', 'one month', 'one months'],
+
+  '2W': [
+    '2w', '2 w',
+    'two w',
+    'two double u', 'two double you',
+    '2 double u', '2 double you',
+    'two week', 'two weeks',
+    '2 week', '2 weeks'
+  ],
+
+  '1W': [
+    '1w', '1 w',
+    'one w',
+    'one double u', 'one double you',
+    '1 double u', '1 double you',
+    'one week', 'one weeks',
+    '1 week', '1 weeks'
+  ],
+
+  '4D': ['4d', '4 d', 'four d', 'four dee', 'four day', 'four days', '4 day', '4 days'],
+  '2D': ['2d', '2 d', 'two d', 'two dee', 'two day', 'two days', '2 day', '2 days'],
+  '1D': ['1d', '1 d', 'one d', 'one dee', 'one day', 'one days', '1 day', '1 days']
 };
 
 const LIQ_STATUS = {
@@ -424,6 +442,51 @@ function consumeLexicon(tokens,pos,dictionary,threshold=0.70,maxWindow=4){
   return best;
 }
 
+function consumeTimeframeStrict(tokens,pos){
+  pos=skipFillers(tokens,pos);
+  let best=null;
+
+  for(const canonical of Object.keys(TIMEFRAMES)){
+    const aliases=TIMEFRAMES[canonical].concat([canonical]);
+
+    for(const alias of aliases){
+      const aliasTokens=tokenize(alias);
+      if(!aliasTokens.length || pos+aliasTokens.length>tokens.length) continue;
+
+      let exact=true;
+      for(let i=0;i<aliasTokens.length;i++){
+        if(tokens[pos+i]!==aliasTokens[i]){
+          exact=false;
+          break;
+        }
+      }
+
+      if(exact && (!best || aliasTokens.length>best.length)){
+        best={
+          ok:true,
+          value:canonical,
+          next:pos+aliasTokens.length,
+          score:1,
+          raw:tokens.slice(pos,pos+aliasTokens.length).join(' '),
+          alias:alias,
+          length:aliasTokens.length
+        };
+      }
+    }
+  }
+
+  if(!best){
+    return{
+      ok:false,
+      next:pos,
+      score:0,
+      reason:'timeframe strict non reconnu'
+    };
+  }
+
+  return best;
+}
+
 const WORD_NUMBERS={
   zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9,
   ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16,
@@ -587,7 +650,7 @@ function parseOneFactor(tokens,start){
   if(!fs.ok)return err('factor',pos,tokens,'LA/LU/CZA/CZU/OE/DISTRIB/ACCU/SP/T',{trace:[],partialParts:[],factorStart:start});
   factor=fs.value; pos=fs.next; parts.push(factor); snapshot('factor');
 
-  const tf=consumeLexicon(tokens,pos,TIMEFRAMES,0.70,4);
+  const tf=consumeTimeframeStrict(tokens,pos);
   if(!tf.ok)return fail(factor+' timeframe','6M/3M/1M/2W/1W/4D/2D/1D');
   pos=tf.next; parts.push(tf.value); snapshot('timeframe');
 
@@ -1063,7 +1126,7 @@ function parseClosedBias(text){
       return { kind:'lexicon', label:'factor', dictionary:FACTOR_STARTS, threshold:0.70, maxWindow:4 };
     }
     if (expected === '6M/3M/1M/2W/1W/4D/2D/1D') {
-      return { kind:'lexicon', label:'timeframe', dictionary:TIMEFRAMES, threshold:0.70, maxWindow:4 };
+      return { kind:'timeframe_strict', label:'timeframe' };
     }
     if (expected === 'TBS/PS/S') {
       return { kind:'lexicon', label:'liquidity status', dictionary:LIQ_STATUS, threshold:0.70, maxWindow:4 };
@@ -1120,6 +1183,12 @@ function parseClosedBias(text){
       }
     }
 
+    if (context.kind === 'timeframe_strict') {
+      const match = consumeTimeframeStrict(tokens, 0);
+      if (!match.ok) return { matched:false, score:0 };
+      return { matched:true, score:1, value:match.value, consumed:offset + match.next };
+    }
+
     if (context.kind === 'lexicon') {
       const match = consumeLexicon(tokens, 0, context.dictionary, 0.01, context.maxWindow || 4);
       if (!match.ok || match.score < context.threshold) return { matched:false, score:match.score || 0 };
@@ -1142,7 +1211,7 @@ function parseClosedBias(text){
   function canonicalContextValue(context, value) {
     if (!context) return String(value);
 
-    if (context.kind === 'lexicon') return String(value);
+    if (context.kind === 'lexicon' || context.kind === 'timeframe_strict') return String(value);
 
     if (context.label === 'quality') return 'Q' + String(value);
     if (context.label === 'distance') return 'D' + String(value);
@@ -1238,10 +1307,16 @@ function parseClosedBias(text){
       }
 
       if (bestContextText !== null) return bestContextText;
+
+      // V4.5 STRICT TIMEFRAME:
+      // Si le système attend un timeframe et qu'aucune alternative Chrome
+      // ne correspond EXACTEMENT à un alias autorisé, on n'accepte RIEN.
+      // On reste sur le même champ au lieu de faire un fallback approximatif.
+      if (context.kind === 'timeframe_strict') return '';
     }
 
-    // Fallback V1 : si aucune hypothèse ne correspond assez au champ attendu,
-    // on conserve le score global existant. Le parser à 70 % reste le garde-fou final.
+    // Fallback V1 : pour les AUTRES champs seulement, si aucune hypothèse ne
+    // correspond assez au champ attendu, on conserve le score global existant.
     let bestText = result[0].transcript;
     let bestScore = scoreWholeText(normalizeSpaces(prefix + ' ' + bestText));
     for (let i = 1; i < result.length; i++) {
@@ -1288,7 +1363,10 @@ function parseClosedBias(text){
       ['LA',7.0],['LU',7.0],['CZA',7.0],['CZU',7.0],['TBS',6.5],['PS',5.8],['S',4.5],['TBF',6.5],['PF',5.8],['F',4.5],
       ['OB',5.8],['BI',5.8],['POI',5.8],['OE bull',7.0],['OE bear',7.0],['DISTRIB',7.0],['ACCU',7.0],['SP bull',7.0],['SP bear',7.0],['T bull',7.0],['T bear',7.0],
       ['IN',5.5],['OUT',5.5],['SUP',6.0],['OPP',6.0],
-      ['6M',5.5],['3M',5.5],['1M',5.5],['2W',5.5],['1W',5.5],['4D',5.5],['2D',5.5],['1D',5.5],
+      ['6M',5.5],['six M',5.5],['3M',5.5],['three M',5.5],['1M',5.5],['one M',5.5],
+      ['2W',6.5],['two W',6.5],['two double you',6.0],['two weeks',5.5],
+      ['1W',6.5],['one W',6.5],['one double you',6.0],['one week',5.5],
+      ['4D',6.0],['four D',6.0],['2D',6.0],['two D',6.0],['1D',6.0],['one D',6.0],
       ['Q1',5.0],['Q2',5.0],['Q3',5.0],['Q4',5.0],['Q5',5.0],['Q6',5.0],
       ['1',7.0],['2',7.0],['3',7.0],['4',7.0],['5 B',7.0],['5 R',7.0],['6',7.0],['7',7.0],['8 B',7.0],['8 R',7.0],['9 B',7.0],['9 R',7.0],
       ['clear',7.5],['clear factor',7.5],['clear bias',7.5],
