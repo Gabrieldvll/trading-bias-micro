@@ -257,8 +257,7 @@ function extractSegments(text) {
   const hits=[]; let match;
   while((match=markerRegex.exec(canonical))!==null){hits.push({field:FIELD_ORDER.find(x=>x.toLowerCase()===match[1].toLowerCase()),index:match.index,end:markerRegex.lastIndex});}
   const segments={};
-  hits.forEach((hit,i)=>{const next=hits[i+1];const value=canonical.slice(hit.end,next?next.index:canonical.length).trim();if(!(hit.field in segments))segments[hit.field]=value;});
-  return {canonical,segments};
+  hits.forEach((hit,i)=>{const next=hits[i+1];const value=canonical.slice(hit.end,next?next.index:canonical.length).trim();segments[hit.field]=value;});
 }
 function firstNumeric(text) {
   const f=fold(text); const m=f.match(/-?\d+(?:\.\d+)?/); if(m)return m[0];
