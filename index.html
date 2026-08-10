@@ -291,6 +291,7 @@ function expandHeaderShorthand(text) {
 
   // Pair shortcuts.
   out = out.replace(/\bP\s+(?:N\s*C|NC)\b/gi, ' pair NZDCAD ');
+  out = out.replace(/\bP\s+(?:U\s*P|UP)\b/gi, ' pair USDPLN ');
   out = out.replace(/\bP\s+(?:E\s*U|EU)\b/gi, ' pair EURUSD ');
 
   // OUTCOME marker aliases.
